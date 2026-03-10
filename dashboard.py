@@ -240,13 +240,26 @@ else:
 st.subheader("📝 Tool Activity Log")
 
 if not history_df.empty:
+    # Use the action recorded by backend
+    history_df["action"] = history_df["action"].replace({
+        "CHECKOUT": "Checked Out",
+        "RETURN": "Returned"
+    })
 
-    history_df["action"] = history_df["return_time"].apply(
-        lambda x: "Returned" if pd.notnull(x) else "Checked Out"
-    )
-
-    log_df = history_df[
-        [
+    # Optional: show returned_by if backend added this field
+    if "returned_by" in history_df.columns:
+        log_columns = [
+            "tool_id",
+            "tool_name",
+            "user",           # person who checked out
+            "returned_by",    # person who returned
+            "action",
+            "checkout_time",
+            "return_time",
+            "duration_minutes"
+        ]
+    else:
+        log_columns = [
             "tool_id",
             "tool_name",
             "user",
@@ -255,35 +268,34 @@ if not history_df.empty:
             "return_time",
             "duration_minutes"
         ]
-    ]
 
-    log_df = log_df.sort_values(
-        by="checkout_time",
-        ascending=False
-    )
+    log_df = history_df[log_columns]
 
-    # Search operator
-    search_user = st.text_input("🔍 Search Operator")
+    # Sort newest first
+    log_df = log_df.sort_values(by="checkout_time", ascending=False)
 
+    # Optional: search/filter by operator
+    search_user = st.text_input("Search Operator")
     if search_user:
         log_df = log_df[
-            log_df["user"].str.contains(search_user, case=False)
+            log_df["user"].str.contains(search_user, case=False) |
+            log_df.get("returned_by", "").str.contains(search_user, case=False)
         ]
 
+    # Display in Streamlit
     st.dataframe(log_df, use_container_width=True)
 
-    # Download logs
+    # Allow CSV download
     csv = log_df.to_csv(index=False).encode("utf-8")
-
     st.download_button(
-        label="⬇ Download Logs",
-        data=csv,
-        file_name="tool_activity_logs.csv",
-        mime="text/csv"
+        "Download Logs",
+        csv,
+        "tool_logs.csv",
+        "text/csv"
     )
 
 else:
-    st.write("No tool activity logs available.")
+    st.write("No tool logs available")
 
 # -----------------------------
 # 1️⃣2️⃣ Filter tools
