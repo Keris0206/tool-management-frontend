@@ -203,26 +203,70 @@ else:
 # -----------------------------
 st.subheader("📝 Tool Activity Log")
 if not history_df.empty:
+    # Replace action codes with readable text
     history_df["action"] = history_df["action"].replace({
         "CHECKOUT": "Checked Out",
         "RETURN": "Returned"
     })
-    if "returned_by" in history_df.columns:
-        log_columns = ["tool_id","tool_name","user","returned_by","action","checkout_time","return_time","duration_minutes"]
-    else:
-        log_columns = ["tool_id","tool_name","user","action","checkout_time","return_time","duration_minutes"]
+
+    # Ensure 'returned_by' and 'return_time' columns always exist
+    if "returned_by" not in history_df.columns:
+        history_df["returned_by"] = ""
+    if "return_time" not in history_df.columns:
+        history_df["return_time"] = pd.NaT
+
+    # Timezone for Singapore
+    sg_tz = pytz.timezone("Asia/Singapore")
+    now_sg = datetime.now(sg_tz)
+
+    # Update duration_minutes for ongoing checkouts
+    history_df["duration_minutes"] = history_df.apply(
+        lambda row: row["duration_minutes"] 
+        if pd.notnull(row["duration_minutes"]) 
+        else (now_sg - pd.to_datetime(row["checkout_time"], utc=True).tz_convert(sg_tz)).total_seconds() / 60,
+        axis=1
+    )
+
+    # Show "In Progress" if tool hasn't been returned yet
+    history_df["display_return_time"] = history_df["return_time"].apply(
+        lambda x: x if pd.notnull(x) else "In Progress"
+    )
+
+    log_columns = [
+        "tool_id",
+        "tool_name",
+        "user",
+        "returned_by",
+        "action",
+        "checkout_time",
+        "display_return_time",
+        "duration_minutes"
+    ]
+
     log_df = history_df[log_columns]
+
+    # Sort newest checkout first
     log_df = log_df.sort_values(by="checkout_time", ascending=False)
 
+    # Optional: search/filter by operator
     search_user = st.text_input("Search Operator")
     if search_user:
         log_df = log_df[
             log_df["user"].str.contains(search_user, case=False) |
-            log_df.get("returned_by", "").str.contains(search_user, case=False)
+            log_df["returned_by"].str.contains(search_user, case=False)
         ]
 
+    # Display in Streamlit
     st.dataframe(log_df, use_container_width=True)
-    csv = log_df.to_csv(index=False).encode("utf-8")
-    st.download_button("Download Logs", csv, "tool_logs.csv", "text/csv")
+
+    # Allow CSV download
+    csv = log_df.rename(columns={"display_return_time": "return_time"}).to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "Download Logs",
+        csv,
+        "tool_logs.csv",
+        "text/csv"
+    )
+
 else:
     st.write("No tool logs available")
