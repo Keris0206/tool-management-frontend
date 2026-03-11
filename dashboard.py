@@ -67,28 +67,34 @@ else:
 # -----------------------------
 # 4️⃣ Sync tool status with history
 # -----------------------------
+# -----------------------------
+# 4️⃣ Sync tool status with history
+# -----------------------------
 if not history_df.empty and not tools_df.empty:
 
-    latest_history = (
-        history_df.sort_values("checkout_time")
-        .groupby("tool_id")
-        .last()
-        .reset_index()
+    # Ensure datetime format
+    history_df["checkout_time"] = pd.to_datetime(
+        history_df["checkout_time"], errors="coerce", utc=True
     )
 
-    latest_history["status"] = latest_history["return_time"].apply(
-        lambda x: "In Use" if pd.isnull(x) else "Available"
+    history_df["return_time"] = pd.to_datetime(
+        history_df["return_time"], errors="coerce", utc=True
     )
 
-    tools_df = tools_df.drop(columns=["status"], errors="ignore")
+    # Compute current status for each tool
+    def compute_status(tool_id):
+        tool_history = history_df[history_df["tool_id"] == tool_id]
 
-    tools_df = tools_df.merge(
-        latest_history[["tool_id", "status"]],
-        on="tool_id",
-        how="left"
-    )
+        if tool_history.empty:
+            return "Available"
 
-    tools_df["status"] = tools_df["status"].fillna("Available")
+        # If any record has no return_time → tool still in use
+        if tool_history["return_time"].isnull().any():
+            return "In Use"
+
+        return "Available"
+
+    tools_df["status"] = tools_df["tool_id"].apply(compute_status)
 
 # -----------------------------
 # Display tools table
@@ -171,88 +177,133 @@ except Exception as e:
     st.write(f"Error fetching history: {e}")
 
 # -----------------------------
-# 🟢 Live Tool Status Panel
+# 9️⃣ Live Tool Status
 # -----------------------------
 st.subheader("📡 Live Tool Status")
 
 if not history_df.empty:
 
     sg_tz = pytz.timezone("Asia/Singapore")
+
+    history_df["checkout_time"] = pd.to_datetime(
+        history_df["checkout_time"], errors="coerce", utc=True
+    ).dt.tz_convert(sg_tz)
+
+    history_df["return_time"] = pd.to_datetime(
+        history_df["return_time"], errors="coerce", utc=True
+    ).dt.tz_convert(sg_tz)
+
     now_sg = datetime.now(sg_tz)
 
-    history_df["checkout_time"] = pd.to_datetime(history_df["checkout_time"], utc=True).dt.tz_convert(sg_tz)
-    history_df["return_time"] = pd.to_datetime(history_df["return_time"], utc=True).dt.tz_convert(sg_tz)
+    # Ensure columns exist
+    if "user" not in history_df.columns:
+        history_df["user"] = ""
 
-    # Latest record for each tool
+    if "returned_by" not in history_df.columns:
+        history_df["returned_by"] = ""
+
+    # Get latest history record per tool
     latest_history = (
-        history_df.sort_values("checkout_time")
+        history_df.sort_values("checkout_time", ascending=False)
         .groupby("tool_id")
-        .last()
+        .first()
         .reset_index()
     )
 
+    # -----------------------------
     # Tools currently in use
+    # -----------------------------
     in_use = latest_history[latest_history["return_time"].isnull()].copy()
 
-    # Calculate live duration
-    in_use["current_duration"] = (
-        now_sg - in_use["checkout_time"]
-    ).dt.total_seconds() / 60
+    if not in_use.empty:
 
-    # Recently returned tools (last 24h)
-    returned = latest_history[
-        latest_history["return_time"].notnull()
-    ].copy()
+        in_use["current_duration"] = (
+            now_sg - in_use["checkout_time"]
+        ).dt.total_seconds() / 60
+
+        st.markdown("### 🔧 Tools Currently In Use")
+
+        st.dataframe(
+            in_use[
+                [
+                    "tool_id",
+                    "tool_name",
+                    "user",
+                    "checkout_time",
+                    "current_duration",
+                ]
+            ].rename(
+                columns={
+                    "tool_id": "Tool ID",
+                    "tool_name": "Tool Name",
+                    "user": "Checked Out By",
+                    "checkout_time": "Checkout Time",
+                    "current_duration": "Duration (minutes)",
+                }
+            ),
+            use_container_width=True,
+        )
+
+    else:
+        st.write("No tools currently in use.")
+
+    # -----------------------------
+    # Recently returned tools
+    # -----------------------------
+    returned = latest_history[latest_history["return_time"].notnull()].copy()
 
     returned_recent = returned[
         returned["return_time"] > now_sg - pd.Timedelta(hours=24)
     ]
 
-    # Longest checked out tools
-    longest = in_use.sort_values("current_duration", ascending=False).head(5)
+    if not returned_recent.empty:
 
-    col1, col2, col3 = st.columns(3)
+        st.markdown("### 🔄 Recently Returned Tools")
 
-    with col1:
-        st.markdown("### 🟢 Tools Currently In Use")
-        if not in_use.empty:
-            st.dataframe(
-                in_use[["tool_id","tool_name","user","checkout_time","current_duration"]],
-                use_container_width=True
-            )
-        else:
-            st.write("No tools currently checked out.")
+        st.dataframe(
+            returned_recent[
+                [
+                    "tool_id",
+                    "tool_name",
+                    "user",
+                    "returned_by",
+                    "checkout_time",
+                    "return_time",
+                ]
+            ].rename(
+                columns={
+                    "tool_id": "Tool ID",
+                    "tool_name": "Tool Name",
+                    "user": "Checked Out By",
+                    "returned_by": "Returned By",
+                    "checkout_time": "Checkout Time",
+                    "return_time": "Return Time",
+                }
+            ),
+            use_container_width=True,
+        )
 
-    with col2:
-        st.markdown("### 🔵 Recently Returned (24h)")
-        if not returned_recent.empty:
-            st.dataframe(
-                returned_recent[["tool_id","tool_name","returned_by","return_time"]],
-                use_container_width=True
-            )
-        else:
-            st.write("No recent returns.")
-
-    with col3:
-        st.markdown("### ⏱ Longest Checked-Out Tools")
-        if not longest.empty:
-            st.dataframe(
-                longest[["tool_id","tool_name","user","current_duration"]],
-                use_container_width=True
-            )
-        else:
-            st.write("No long checkouts.")
+    else:
+        st.write("No tools returned in the last 24 hours.")
 # -----------------------------
-# 8️⃣ Tool Status Pie Chart
+# 8️⃣ Tool Status Distribution
 # -----------------------------
 st.subheader("📊 Tool Status Distribution")
-if not filtered_tools_df.empty and "status" in filtered_tools_df.columns:
+
+if not tools_df.empty:
+
+    status_counts = tools_df["status"].value_counts().reset_index()
+    status_counts.columns = ["status", "count"]
+
     fig_status = px.pie(
-        filtered_tools_df,
+        status_counts,
         names="status",
+        values="count",
         title="Tool Status Distribution"
     )
+
     st.plotly_chart(fig_status, use_container_width=True)
+
 else:
     st.write("No tools data available for status chart.")
 
