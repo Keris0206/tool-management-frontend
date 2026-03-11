@@ -37,6 +37,20 @@ def get_tools():
 tools_df = get_tools()
 
 # -----------------------------
+# 3️⃣ Fetch history data
+# -----------------------------
+history_df = pd.DataFrame()
+
+try:
+    history_response = requests.get(f"{API_URL}/export/history")
+    if history_response.status_code == 200:
+        history_df = pd.DataFrame(history_response.json())
+    else:
+        st.warning("Failed to fetch history from backend.")
+except Exception as e:
+    st.error(f"Error fetching history: {e}")
+
+# -----------------------------
 # 1️⃣2️⃣ Filter Tools
 # -----------------------------
 st.subheader("🔍 Filter Tools")
