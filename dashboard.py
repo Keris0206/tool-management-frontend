@@ -1,3 +1,7 @@
+# ============================================================
+# 1️⃣ Import Libraries
+# ============================================================
+
 import streamlit as st
 import pandas as pd
 import requests
@@ -5,294 +9,180 @@ from datetime import datetime
 import plotly.express as px
 import pytz
 import os
-
-# -----------------------------
-# 1️⃣ API base URL
-# -----------------------------
-API_URL = os.environ.get("API_URL", "https://tool-management-backend-lscs.onrender.com")
-
-st.set_page_config(page_title="Tool Management Dashboard", layout="wide")
-st.title("🛠 Tool Management Dashboard")
-
-# ✅ Auto-refresh every 10 seconds
 from streamlit_autorefresh import st_autorefresh
-st_autorefresh(interval=10_000, key="dashboard_refresh")  # 10 seconds
 
-# -----------------------------
-# 2️⃣ Fetch tools data
-# -----------------------------
-@st.cache_data(ttl=60)
+
+# ============================================================
+# 2️⃣ API Base URL
+# ============================================================
+
+API_URL = os.environ.get(
+    "API_URL",
+    "https://tool-management-backend-lscs.onrender.com"
+)
+
+
+# ============================================================
+# 3️⃣ Page Configuration
+# ============================================================
+
+st.set_page_config(
+    page_title="Tool Management Dashboard",
+    layout="wide"
+)
+
+st.title("🛠 Intelligent Tool Management Dashboard")
+
+
+# ============================================================
+# 4️⃣ Auto Refresh
+# ============================================================
+
+st_autorefresh(interval=10000, key="refresh")  # refresh every 10s
+
+
+# ============================================================
+# 5️⃣ Fetch Tools Data
+# ============================================================
+
+@st.cache_data(ttl=30)
 def get_tools():
+
     try:
         response = requests.get(f"{API_URL}/tools")
+
         if response.status_code == 200:
             return pd.DataFrame(response.json())
-        else:
-            st.error("Failed to fetch tools")
-            return pd.DataFrame()
+
     except Exception as e:
-        st.error(f"Error: {e}")
-        return pd.DataFrame()
+        st.error(f"Error fetching tools: {e}")
+
+    return pd.DataFrame()
+
 
 tools_df = get_tools()
 
-# -----------------------------
-# 3️⃣ Fetch history data
-# -----------------------------
-history_df = pd.DataFrame()
 
-try:
-    history_response = requests.get(f"{API_URL}/export/history")
-    if history_response.status_code == 200:
-        history_df = pd.DataFrame(history_response.json())
-    else:
-        st.warning("Failed to fetch history from backend.")
-except Exception as e:
-    st.error(f"Error fetching history: {e}")
+# ============================================================
+# 6️⃣ Fetch Tool History
+# ============================================================
 
-# -----------------------------
-# 1️⃣2️⃣ Filter Tools
-# -----------------------------
-st.subheader("🔍 Filter Tools")
-status_filter = st.selectbox(
-    "Filter by Status",
-    ["All", "Available", "In Use", "Maintenance"]
-)
+@st.cache_data(ttl=30)
+def get_history():
 
-if status_filter != "All" and not tools_df.empty:
-    filtered_tools_df = tools_df[tools_df["status"] == status_filter]
-else:
-    filtered_tools_df = tools_df.copy()
+    try:
+        response = requests.get(f"{API_URL}/export/history")
 
-# -----------------------------
-# 4️⃣ Sync tool status with history
-# -----------------------------
-# -----------------------------
-# 4️⃣ Sync tool status with history
-# -----------------------------
-if not history_df.empty and not tools_df.empty:
+        if response.status_code == 200:
+            return pd.DataFrame(response.json())
 
-    # Ensure datetime format
-    history_df["checkout_time"] = pd.to_datetime(
-        history_df["checkout_time"], errors="coerce", utc=True
-    )
+    except Exception as e:
+        st.error(f"Error fetching history: {e}")
 
-    history_df["return_time"] = pd.to_datetime(
-        history_df["return_time"], errors="coerce", utc=True
-    )
-
-    # Compute current status for each tool
-    def compute_status(tool_id):
-        tool_history = history_df[history_df["tool_id"] == tool_id]
-
-        if tool_history.empty:
-            return "Available"
-
-        # If any record has no return_time → tool still in use
-        if tool_history["return_time"].isnull().any():
-            return "In Use"
-
-        return "Available"
-
-    tools_df["status"] = tools_df["tool_id"].apply(compute_status)
-
-# -----------------------------
-# Display tools table
-# -----------------------------
-st.subheader("📋 All Tools")
-
-if status_filter != "All" and not tools_df.empty:
-    filtered_tools_df = tools_df[tools_df["status"] == status_filter]
-else:
-    filtered_tools_df = tools_df.copy()
-
-if not filtered_tools_df.empty:
-    st.dataframe(filtered_tools_df, use_container_width=True)
-else:
-    st.write("No tools data available.")
-
-# -----------------------------
-# 3️⃣ Fetch summary
-# -----------------------------
-summary = {
-    "total": len(filtered_tools_df),
-    "Available": len(filtered_tools_df[filtered_tools_df["status"]=="Available"]),
-    "In Use": len(filtered_tools_df[filtered_tools_df["status"]=="In Use"]),
-    "Maintenance": len(filtered_tools_df[filtered_tools_df["status"]=="Maintenance"])
-}
-
-# -----------------------------
-# 5️⃣ Display summary cards
-# -----------------------------
-st.subheader("📊 Tools Summary")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total Tools", summary["total"])
-col2.metric("Available", summary["Available"])
-col3.metric("In Use", summary["In Use"])
-col4.metric("Maintenance", summary["Maintenance"])
+    return pd.DataFrame()
 
 
+history_df = get_history()
 
-# -----------------------------
-# 7️⃣ Tool usage chart
-# -----------------------------
-st.subheader("📈 Tool Usage Over Time")
-history_df = pd.DataFrame()
 
-try:
-    history_response = requests.get(f"{API_URL}/export/history")
-    if history_response.status_code == 200:
-        history_df = pd.DataFrame(history_response.json())
-        if not history_df.empty:
-            sg_tz = pytz.timezone("Asia/Singapore")
-            history_df["checkout_time"] = pd.to_datetime(
-                history_df["checkout_time"], errors="coerce", utc=True
-            ).dt.tz_convert(sg_tz)
-            history_df["return_time"] = pd.to_datetime(
-                history_df["return_time"], errors="coerce", utc=True
-            ).dt.tz_convert(sg_tz)
-            now_sg = datetime.now(sg_tz)
-            history_df["duration_minutes"] = history_df.apply(
-                lambda row: row["duration_minutes"] if pd.notnull(row["duration_minutes"])
-                else (now_sg - row["checkout_time"]).total_seconds() / 60,
-                axis=1
-            )
-            history_df["status"] = history_df["return_time"].apply(
-                lambda x: "Completed" if pd.notnull(x) else "In Progress"
-            )
-            fig = px.bar(
-                history_df,
-                x="tool_name",
-                y="duration_minutes",
-                color="status",
-                title="Tool Usage Duration (minutes)",
-                hover_data=["user", "checkout_time", "return_time"]
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.write("No history data available.")
-    else:
-        st.write("Failed to fetch history from backend.")
-except Exception as e:
-    st.write(f"Error fetching history: {e}")
+# ============================================================
+# 7️⃣ Process History Data
+# ============================================================
 
-# -----------------------------
-# 9️⃣ Live Tool Status
-# -----------------------------
-st.subheader("📡 Live Tool Status")
+sg_tz = pytz.timezone("Asia/Singapore")
 
 if not history_df.empty:
 
-    sg_tz = pytz.timezone("Asia/Singapore")
-
-    history_df["checkout_time"] = pd.to_datetime(
-        history_df["checkout_time"], errors="coerce", utc=True
+    history_df["timestamp"] = pd.to_datetime(
+        history_df["timestamp"],
+        errors="coerce",
+        utc=True
     ).dt.tz_convert(sg_tz)
 
-    history_df["return_time"] = pd.to_datetime(
-        history_df["return_time"], errors="coerce", utc=True
-    ).dt.tz_convert(sg_tz)
-
-    now_sg = datetime.now(sg_tz)
-
-    # Ensure columns exist
-    if "user" not in history_df.columns:
-        history_df["user"] = ""
-
-    if "returned_by" not in history_df.columns:
-        history_df["returned_by"] = ""
-
-    # Get latest history record per tool
     latest_history = (
-        history_df.sort_values("checkout_time", ascending=False)
+        history_df
+        .sort_values("timestamp", ascending=False)
         .groupby("tool_id")
         .first()
         .reset_index()
     )
 
-    # -----------------------------
-    # Tools currently in use
-    # -----------------------------
-    in_use = latest_history[latest_history["return_time"].isnull()].copy()
+else:
 
-    if not in_use.empty:
+    latest_history = pd.DataFrame()
 
-        in_use["current_duration"] = (
-            now_sg - in_use["checkout_time"]
-        ).dt.total_seconds() / 60
 
-        st.markdown("### 🔧 Tools Currently In Use")
+# ============================================================
+# 8️⃣ Determine Current Tool Status
+# ============================================================
 
-        st.dataframe(
-            in_use[
-                [
-                    "tool_id",
-                    "tool_name",
-                    "user",
-                    "checkout_time",
-                    "current_duration",
-                ]
-            ].rename(
-                columns={
-                    "tool_id": "Tool ID",
-                    "tool_name": "Tool Name",
-                    "user": "Checked Out By",
-                    "checkout_time": "Checkout Time",
-                    "current_duration": "Duration (minutes)",
-                }
-            ),
-            use_container_width=True,
-        )
+if not latest_history.empty and not tools_df.empty:
 
-    else:
-        st.write("No tools currently in use.")
+    status_map = {}
 
-    # -----------------------------
-    # Recently returned tools
-    # -----------------------------
-    returned = latest_history[latest_history["return_time"].notnull()].copy()
+    for _, row in latest_history.iterrows():
 
-    returned_recent = returned[
-        returned["return_time"] > now_sg - pd.Timedelta(hours=24)
-    ]
+        if row["action"] == "CHECKOUT":
+            status_map[row["tool_id"]] = "In Use"
+        else:
+            status_map[row["tool_id"]] = "Available"
 
-    if not returned_recent.empty:
+    tools_df["status"] = tools_df["tool_id"].map(status_map).fillna("Available")
 
-        st.markdown("### 🔄 Recently Returned Tools")
 
-        st.dataframe(
-            returned_recent[
-                [
-                    "tool_id",
-                    "tool_name",
-                    "user",
-                    "returned_by",
-                    "checkout_time",
-                    "return_time",
-                ]
-            ].rename(
-                columns={
-                    "tool_id": "Tool ID",
-                    "tool_name": "Tool Name",
-                    "user": "Checked Out By",
-                    "returned_by": "Returned By",
-                    "checkout_time": "Checkout Time",
-                    "return_time": "Return Time",
-                }
-            ),
-            use_container_width=True,
-        )
+# ============================================================
+# 9️⃣ Tool Summary
+# ============================================================
 
-    else:
-        st.write("No tools returned in the last 24 hours.")
-# -----------------------------
-# 8️⃣ Tool Status Distribution
-# -----------------------------
+st.subheader("📊 Tool Summary")
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Total Tools", len(tools_df))
+
+col2.metric(
+    "Available",
+    len(tools_df[tools_df["status"] == "Available"])
+)
+
+col3.metric(
+    "In Use",
+    len(tools_df[tools_df["status"] == "In Use"])
+)
+
+
+# ============================================================
+# 🔟 Tool Inventory Table
+# ============================================================
+
+st.subheader("📋 Tool Inventory")
+
+if not tools_df.empty:
+
+    st.dataframe(
+        tools_df,
+        use_container_width=True
+    )
+
+else:
+
+    st.write("No tools available.")
+
+
+# ============================================================
+# 1️⃣1️⃣ Tool Status Distribution
+# ============================================================
+
 st.subheader("📊 Tool Status Distribution")
 
 if not tools_df.empty:
 
-    status_counts = tools_df["status"].value_counts().reset_index()
+    status_counts = (
+        tools_df["status"]
+        .value_counts()
+        .reset_index()
+    )
+
     status_counts.columns = ["status", "count"]
 
     fig_status = px.pie(
@@ -302,112 +192,223 @@ if not tools_df.empty:
         title="Tool Status Distribution"
     )
 
-    st.plotly_chart(fig_status, use_container_width=True)
-
-else:
-    st.write("No tools data available for status chart.")
-
-# -----------------------------
-# 9️⃣ Tools by Process
-# -----------------------------
-st.subheader("🏭 Tools by Process")
-if not filtered_tools_df.empty and "process" in filtered_tools_df.columns:
-    process_count = filtered_tools_df.groupby("process").size().reset_index(name="count")
-    fig_process = px.bar(
-        process_count,
-        x="process",
-        y="count",
-        title="Number of Tools per Process"
-    )
-    st.plotly_chart(fig_process, use_container_width=True)
-else:
-    st.write("No process data available.")
-
-# -----------------------------
-# 🔟 Tools by Machine
-# -----------------------------
-st.subheader("🛠 Tools by Machine")
-if not filtered_tools_df.empty and "machine" in filtered_tools_df.columns:
-    machine_count = filtered_tools_df.groupby("machine").size().reset_index(name="count")
-    fig_machine = px.bar(
-        machine_count,
-        x="machine",
-        y="count",
-        title="Number of Tools per Machine"
-    )
-    st.plotly_chart(fig_machine, use_container_width=True)
-else:
-    st.write("No machine data available.")
-
-# -----------------------------
-# 1️⃣1️⃣ Tool Activity Log
-# -----------------------------
-st.subheader("📝 Tool Activity Log")
-if not history_df.empty:
-    # Replace action codes with readable text
-    history_df["action"] = history_df["action"].replace({
-        "CHECKOUT": "Checked Out",
-        "RETURN": "Returned"
-    })
-
-    # Ensure 'returned_by' and 'return_time' columns always exist
-    if "returned_by" not in history_df.columns:
-        history_df["returned_by"] = ""
-    if "return_time" not in history_df.columns:
-        history_df["return_time"] = pd.NaT
-
-    # Timezone for Singapore
-    sg_tz = pytz.timezone("Asia/Singapore")
-    now_sg = datetime.now(sg_tz)
-
-    # Update duration_minutes for ongoing checkouts
-    history_df["duration_minutes"] = history_df.apply(
-        lambda row: row["duration_minutes"] 
-        if pd.notnull(row["duration_minutes"]) 
-        else (now_sg - pd.to_datetime(row["checkout_time"], utc=True).tz_convert(sg_tz)).total_seconds() / 60,
-        axis=1
+    st.plotly_chart(
+        fig_status,
+        use_container_width=True
     )
 
-    # Show "In Progress" if tool hasn't been returned yet
-    history_df["display_return_time"] = history_df["return_time"].apply(
-        lambda x: x if pd.notnull(x) else "In Progress"
-    )
 
-    log_columns = [
-        "tool_id",
-        "tool_name",
-        "user",
-        "returned_by",
-        "action",
-        "checkout_time",
-        "display_return_time",
-        "duration_minutes"
+# ============================================================
+# 1️⃣2️⃣ Tools Currently In Use
+# ============================================================
+
+st.subheader("📡 Tools Currently In Use")
+
+if not latest_history.empty:
+
+    in_use = latest_history[
+        latest_history["action"] == "CHECKOUT"
+    ].copy()
+
+    now = datetime.now(sg_tz)
+
+    if not in_use.empty:
+
+        in_use["duration_minutes"] = (
+            now - in_use["timestamp"]
+        ).dt.total_seconds() / 60
+
+        st.dataframe(
+
+            in_use[
+                [
+                    "tool_id",
+                    "tool_name",
+                    "user",
+                    "timestamp",
+                    "duration_minutes"
+                ]
+            ].rename(
+                columns={
+                    "tool_id": "Tool ID",
+                    "tool_name": "Tool Name",
+                    "user": "Operator",
+                    "timestamp": "Checkout Time",
+                    "duration_minutes": "Duration (minutes)"
+                }
+            ),
+
+            use_container_width=True
+        )
+
+    else:
+
+        st.write("No tools currently in use.")
+
+
+# ============================================================
+# 1️⃣3️⃣ Recently Returned Tools
+# ============================================================
+
+st.subheader("🔄 Recently Returned Tools")
+
+if not latest_history.empty:
+
+    returned = latest_history[
+        latest_history["action"] == "RETURN"
     ]
 
-    log_df = history_df[log_columns]
+    recent = returned[
+        returned["timestamp"] >
+        datetime.now(sg_tz) - pd.Timedelta(hours=24)
+    ]
 
-    # Sort newest checkout first
-    log_df = log_df.sort_values(by="checkout_time", ascending=False)
+    if not recent.empty:
 
-    # Optional: search/filter by operator
-    search_user = st.text_input("Search Operator")
-    if search_user:
-        log_df = log_df[
-            log_df["user"].str.contains(search_user, case=False) |
-            log_df["returned_by"].str.contains(search_user, case=False)
-        ]
+        st.dataframe(
 
-    # Display in Streamlit
-    st.dataframe(log_df, use_container_width=True)
+            recent[
+                [
+                    "tool_id",
+                    "tool_name",
+                    "user",
+                    "timestamp"
+                ]
+            ].rename(
+                columns={
+                    "tool_id": "Tool ID",
+                    "tool_name": "Tool Name",
+                    "user": "Returned By",
+                    "timestamp": "Return Time"
+                }
+            ),
 
-    # Allow CSV download
-    csv = log_df.rename(columns={"display_return_time": "return_time"}).to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "Download Logs",
-        csv,
-        "tool_logs.csv",
-        "text/csv"
+            use_container_width=True
+        )
+
+    else:
+
+        st.write("No tools returned in the last 24 hours.")
+
+
+# ============================================================
+# 1️⃣4️⃣ Tool Usage Over Time
+# ============================================================
+
+st.subheader("📈 Tool Usage Over Time")
+
+if not history_df.empty:
+
+    usage_df = history_df.copy()
+
+    usage_df["date"] = usage_df["timestamp"].dt.date
+
+    usage_chart = (
+        usage_df
+        .groupby("date")
+        .size()
+        .reset_index(name="checkouts")
+    )
+
+    fig_usage = px.line(
+        usage_chart,
+        x="date",
+        y="checkouts",
+        markers=True,
+        title="Tool Checkouts Per Day"
+    )
+
+    st.plotly_chart(
+        fig_usage,
+        use_container_width=True
     )
 
 else:
-    st.write("No tool logs available")
+
+    st.write("No usage data available.")
+
+
+# ============================================================
+# 1️⃣5️⃣ Operator Usage Analytics
+# ============================================================
+
+st.subheader("👷 Operator Tool Usage")
+
+if not history_df.empty:
+
+    operator_usage = (
+        history_df
+        .groupby("user")
+        .size()
+        .reset_index(name="checkouts")
+        .sort_values("checkouts", ascending=False)
+    )
+
+    fig_operator = px.bar(
+        operator_usage,
+        x="user",
+        y="checkouts",
+        title="Tool Usage by Operator"
+    )
+
+    st.plotly_chart(
+        fig_operator,
+        use_container_width=True
+    )
+
+else:
+
+    st.write("No operator data available.")
+
+
+# ============================================================
+# 1️⃣6️⃣ Longest Checked-Out Tools
+# ============================================================
+
+st.subheader("⏱ Longest Checked-Out Tools")
+
+if not latest_history.empty:
+
+    active_tools = latest_history[
+        latest_history["action"] == "CHECKOUT"
+    ].copy()
+
+    now = datetime.now(sg_tz)
+
+    if not active_tools.empty:
+
+        active_tools["duration_minutes"] = (
+            now - active_tools["timestamp"]
+        ).dt.total_seconds() / 60
+
+        longest = active_tools.sort_values(
+            "duration_minutes",
+            ascending=False
+        ).head(10)
+
+        st.dataframe(
+
+            longest[
+                [
+                    "tool_id",
+                    "tool_name",
+                    "user",
+                    "timestamp",
+                    "duration_minutes"
+                ]
+            ].rename(
+                columns={
+                    "tool_id": "Tool ID",
+                    "tool_name": "Tool Name",
+                    "user": "Operator",
+                    "timestamp": "Checkout Time",
+                    "duration_minutes": "Duration (minutes)"
+                }
+            ),
+
+            use_container_width=True
+        )
+
+    else:
+
+        st.write("No tools currently checked out.")
