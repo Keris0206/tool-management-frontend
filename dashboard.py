@@ -19,7 +19,7 @@ st.title("🛠 Tool Management Dashboard")
 
 # ✅ Auto-refresh every 10 seconds
 from streamlit_autorefresh import st_autorefresh
-st_autorefresh(interval=10_000, key="dashboard_refresh")  # 10 seconds
+st_autorefresh(interval=60_000, key="dashboard_refresh")  # 10 seconds
 
 
 # -----------------------------
