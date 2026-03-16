@@ -15,8 +15,8 @@ st.set_page_config(page_title="Tool Management Dashboard", layout="wide")
 st.title("🛠 Tool Management Dashboard")
 
 # ✅ Auto-refresh every 60 seconds
-from streamlit_autorefresh import st_autorefresh
-st_autorefresh(interval=60_000, key="dashboard_refresh")  # 60 seconds
+#from streamlit_autorefresh import st_autorefresh
+#st_autorefresh(interval=60*60_000, key="dashboard_refresh")  # 1 hour
 
 # -----------------------------
 # 2️⃣ Fetch tools data
