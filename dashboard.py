@@ -5,6 +5,7 @@ from datetime import datetime
 import plotly.express as px
 import pytz
 import os
+from st_aggrid import AgGrid, GridOptionsBuilder   
 
 # -----------------------------
 # 1️⃣ API base URL
@@ -89,11 +90,53 @@ else:
     filtered_tools_df = tools_df.copy()
 
 # -----------------------------
-# 6️⃣ Display tools table
+# 6️⃣ Display tools table (AgGrid)
 # -----------------------------
 st.subheader("📋 All Tools")
+
 if not filtered_tools_df.empty:
-    st.dataframe(filtered_tools_df, use_container_width=True)
+    gb = GridOptionsBuilder.from_dataframe(filtered_tools_df)
+
+    # Enable filtering, sorting, resizing
+    gb.configure_default_column(
+        filter=True,
+        sortable=True,
+        resizable=True
+    )
+
+    # Status color styling (optional but nice)
+    gb.configure_column(
+        "status",
+        cellStyle={
+            "styleConditions": [
+                {
+                    "condition": "params.value == 'Available'",
+                    "style": {"color": "green", "fontWeight": "bold"},
+                },
+                {
+                    "condition": "params.value == 'In Use'",
+                    "style": {"color": "red", "fontWeight": "bold"},
+                },
+                {
+                    "condition": "params.value == 'Maintenance'",
+                    "style": {"color": "orange", "fontWeight": "bold"},
+                },
+            ]
+        }
+    )
+
+    # Pagination
+    gb.configure_pagination(paginationAutoPageSize=True)
+
+    grid_options = gb.build()
+
+    AgGrid(
+        filtered_tools_df,
+        gridOptions=grid_options,
+        fit_columns_on_grid_load=True,
+        height=400,
+        theme="streamlit"
+    )
 else:
     st.write("No tools data available.")
 
