@@ -146,58 +146,6 @@ if not history_df.empty:
 else:
     st.write("No history data available.")
 
-# -----------------------------
-# 9️⃣ Live Tool Status
-# -----------------------------
-st.subheader("📡 Live Tool Status")
-if not history_df.empty:
-    sg_tz = pytz.timezone("Asia/Singapore")
-    now_sg = datetime.now(sg_tz)
-    history_df["checkout_time"] = history_df["checkout_time"].dt.tz_convert(sg_tz)
-    history_df["return_time"] = history_df["return_time"].dt.tz_convert(sg_tz)
-    history_df["user"] = history_df.get("user", "")
-    history_df["returned_by"] = history_df.get("returned_by", "")
-
-    latest_history = history_df.sort_values("checkout_time", ascending=False).groupby("tool_id").first().reset_index()
-
-    in_use = latest_history[latest_history["return_time"].isnull()].copy()
-    if not in_use.empty:
-        in_use["current_duration"] = (now_sg - in_use["checkout_time"]).dt.total_seconds() / 60
-        st.markdown("### 🔧 Tools Currently In Use")
-        st.dataframe(
-            in_use[["tool_id","tool_name","user","checkout_time","current_duration"]].rename(
-                columns={
-                    "tool_id": "Tool ID",
-                    "tool_name": "Tool Name",
-                    "user": "Checked Out By",
-                    "checkout_time": "Checkout Time",
-                    "current_duration": "Duration (minutes)"
-                }
-            ),
-            use_container_width=True
-        )
-    else:
-        st.write("No tools currently in use.")
-
-    returned_recent = latest_history[latest_history["return_time"].notnull() &
-                                     (latest_history["return_time"] > now_sg - pd.Timedelta(hours=24))].copy()
-    if not returned_recent.empty:
-        st.markdown("### 🔄 Recently Returned Tools")
-        st.dataframe(
-            returned_recent[["tool_id","tool_name","user","returned_by","checkout_time","return_time"]].rename(
-                columns={
-                    "tool_id": "Tool ID",
-                    "tool_name": "Tool Name",
-                    "user": "Checked Out By",
-                    "returned_by": "Returned By",
-                    "checkout_time": "Checkout Time",
-                    "return_time": "Return Time"
-                }
-            ),
-            use_container_width=True
-        )
-    else:
-        st.write("No tools returned in the last 24 hours.")
 
 # -----------------------------
 # 10️⃣ Tool Status Distribution
